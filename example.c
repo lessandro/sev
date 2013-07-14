@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <ev.h>
 #include "sev.h"
 
@@ -12,7 +13,14 @@ void open_cb(struct sev_client *client)
 
 void read_cb(struct sev_client *client, const char *data, size_t len)
 {
-    printf("read %s: %s\n", client->ip, data);
+    char buffer[2049];
+    memcpy(buffer, data, len);
+
+    buffer[len] = '\0';
+    if (buffer[len-1] == '\n')
+        buffer[len-1] = '\0';
+
+    printf("read %s: %s\n", client->ip, buffer);
 
     sev_send(client, "hello\n", 6);
 
