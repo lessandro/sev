@@ -1,0 +1,6 @@
+High level socket library on top of libev
+
+Goals:
+
+- super simple interface, inspired by tornado.tcpserver
+- buffer writes
