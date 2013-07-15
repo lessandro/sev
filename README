@@ -1,6 +1,8 @@
-High level socket library on top of libev
+High level socket library on top of libev.
 
 Goals:
 
 - super simple interface
 - buffer writes
+- C98
+- BSD 2-clause license
