@@ -30,12 +30,12 @@
 #include <sys/queue.h>
 #include <ev.h>
 
-struct sev_client;
+struct sev_stream;
 
-typedef void (sev_open_cb)(struct sev_client *client);
-typedef void (sev_read_cb)(struct sev_client *client, const char *data,
+typedef void (sev_open_cb)(struct sev_stream *stream);
+typedef void (sev_read_cb)(struct sev_stream *stream, const char *data,
     size_t len);
-typedef void (sev_close_cb)(struct sev_client *client);
+typedef void (sev_close_cb)(struct sev_stream *stream);
 
 struct sev_server {
     // socket descriptor
@@ -61,7 +61,7 @@ struct sev_buffer {
     STAILQ_ENTRY(sev_buffer) entries;
 };
 
-struct sev_client {
+struct sev_stream {
     // socket descriptor
     int sd;
 
@@ -70,9 +70,9 @@ struct sev_client {
     struct ev_io *w_write;
     int writing;
 
-    // client info
-    char *ip;
-    int port;
+    // stream info
+    char *remote_address;
+    int remote_port;
 
     struct sev_server *server;
 
@@ -83,10 +83,10 @@ struct sev_client {
     STAILQ_HEAD(sev_buffer_head, sev_buffer) head;
 };
 
-int sev_server_init(struct sev_server *server, int port);
+int sev_listen(struct sev_server *server, int port);
 
-void sev_send(struct sev_client *client, const char *data, size_t len);
+void sev_send(struct sev_stream *stream, const char *data, size_t len);
 
-void sev_close(struct sev_client *client);
+void sev_close(struct sev_stream *stream);
 
 #endif

@@ -55,36 +55,36 @@ static void sev_buffer_free(struct sev_buffer *buffer)
     free(buffer);
 }
 
-// sev_client
+// sev_stream
 
-static void sev_client_free(struct sev_client *client)
+static void sev_stream_free(struct sev_stream *stream)
 {
     // free write queue
-    struct sev_buffer *buffer = STAILQ_FIRST(&client->head);
+    struct sev_buffer *buffer = STAILQ_FIRST(&stream->head);
     while (buffer != NULL) {
         struct sev_buffer *next = STAILQ_NEXT(buffer, entries);
         sev_buffer_free(buffer);
         buffer = next;
     }
-    STAILQ_INIT(&client->head);
+    STAILQ_INIT(&stream->head);
 
     // free everything
-    free(client->w_read);
-    free(client->w_write);
-    free(client->ip);
-    free(client);
+    free(stream->w_read);
+    free(stream->w_write);
+    free(stream->remote_address);
+    free(stream);
 }
 
 // callbacks
 
-static void client_write(struct sev_client *client)
+static void stream_write(struct sev_stream *stream)
 {
-    struct sev_buffer *buffer = STAILQ_FIRST(&client->head);
+    struct sev_buffer *buffer = STAILQ_FIRST(&stream->head);
 
     char *data = buffer->data + buffer->start;
     ssize_t len = buffer->len - buffer->start;
 
-    int n = send(client->sd, data, len, 0);
+    int n = send(stream->sd, data, len, 0);
 
     if (n == -1) {
         perror("send");
@@ -94,38 +94,38 @@ static void client_write(struct sev_client *client)
     buffer->start += n;
 
     if (buffer->start == buffer->len) {
-        STAILQ_REMOVE_HEAD(&client->head, entries);
+        STAILQ_REMOVE_HEAD(&stream->head, entries);
         sev_buffer_free(buffer);
 
-        if (STAILQ_EMPTY(&client->head)) {
+        if (STAILQ_EMPTY(&stream->head)) {
             // nothing left to write
-            client->writing = 0;
-            ev_io_stop(EV_DEFAULT_ client->w_write);
+            stream->writing = 0;
+            ev_io_stop(EV_DEFAULT_ stream->w_write);
         }
     }
 }
 
-static void client_close(struct sev_client *client)
+static void stream_close(struct sev_stream *stream)
 {
-    if (client->server->close_cb)
-        client->server->close_cb(client);
+    if (stream->server->close_cb)
+        stream->server->close_cb(stream);
 
-    if (close(client->sd) == -1) {
+    if (close(stream->sd) == -1) {
         perror("close");
     }
 
     // stop libev watchers
-    ev_io_stop(EV_DEFAULT_ client->w_read);
-    if (client->writing)
-        ev_io_stop(EV_DEFAULT_ client->w_write);
+    ev_io_stop(EV_DEFAULT_ stream->w_read);
+    if (stream->writing)
+        ev_io_stop(EV_DEFAULT_ stream->w_write);
 
-    sev_client_free(client);
+    sev_stream_free(stream);
 }
 
-static void client_read(struct sev_client *client)
+static void stream_read(struct sev_stream *stream)
 {
     static char buffer[BUFSIZE];
-    ssize_t n = recv(client->sd, buffer, BUFSIZE - 1, 0);
+    ssize_t n = recv(stream->sd, buffer, BUFSIZE - 1, 0);
 
     if (n < 0) {
         // error
@@ -135,26 +135,26 @@ static void client_read(struct sev_client *client)
 
     if (n == 0) {
         // client disconnected
-        client_close(client);
+        stream_close(stream);
         return;
     }
 
-    if (client->server->read_cb)
-        client->server->read_cb(client, buffer, n);
+    if (stream->server->read_cb)
+        stream->server->read_cb(stream, buffer, n);
 }
 
-static void client_cb(EV_P_ struct ev_io *watcher, int revents)
+static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
 {
     if (revents & EV_ERROR) {
-        perror("client_cb");
+        perror("stream_cb");
         return;
     }
 
     if (revents & EV_WRITE)
-        client_write(watcher->data);
+        stream_write(watcher->data);
 
     if (revents & EV_READ)
-        client_read(watcher->data);
+        stream_read(watcher->data);
 }
 
 static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
@@ -178,39 +178,40 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
     int flag = 1;
     setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
 
-    // initialize sev_client structure
+    // initialize sev_stream structure
     struct sev_server *server = watcher->data;
-    struct sev_client *client = malloc(sizeof(struct sev_client));
+    struct sev_stream *stream = malloc(sizeof(struct sev_stream));
 
-    client->sd = sd;
-    client->server = server;
-    client->port = addr.sin_port;
-    client->ip = malloc(INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &addr.sin_addr, client->ip, INET_ADDRSTRLEN);
+    stream->sd = sd;
+    stream->server = server;
+    stream->remote_port = addr.sin_port;
+    stream->remote_address = malloc(INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &addr.sin_addr, stream->remote_address,
+        INET_ADDRSTRLEN);
 
     // register with libev
-    client->w_read = malloc(sizeof(struct ev_io));
-    ev_io_init(client->w_read, client_cb, sd, EV_READ);
-    ev_io_start(EV_DEFAULT_ client->w_read);
+    stream->w_read = malloc(sizeof(struct ev_io));
+    ev_io_init(stream->w_read, stream_cb, sd, EV_READ);
+    ev_io_start(EV_DEFAULT_ stream->w_read);
 
-    client->w_write = malloc(sizeof(struct ev_io));
-    ev_io_init(client->w_write, client_cb, sd, EV_WRITE);
+    stream->w_write = malloc(sizeof(struct ev_io));
+    ev_io_init(stream->w_write, stream_cb, sd, EV_WRITE);
 
-    client->w_read->data = client;
-    client->w_write->data = client;
-    client->writing = 0;
+    stream->w_read->data = stream;
+    stream->w_write->data = stream;
+    stream->writing = 0;
 
     // initialize write queue
-    STAILQ_INIT(&client->head);
+    STAILQ_INIT(&stream->head);
 
     // call open callback
     if (server->open_cb)
-        server->open_cb(client);
+        server->open_cb(stream);
 }
 
 // interface
 
-int sev_server_init(struct sev_server *server, int port)
+int sev_listen(struct sev_server *server, int port)
 {
     // create server socket
     int sd = socket(PF_INET, SOCK_STREAM, 0);
@@ -246,18 +247,18 @@ int sev_server_init(struct sev_server *server, int port)
     return 0;
 }
 
-void sev_close(struct sev_client *client)
+void sev_close(struct sev_stream *stream)
 {
-    client_close(client);
+    stream_close(stream);
 }
 
-void sev_send(struct sev_client *client, const char *data, size_t len)
+void sev_send(struct sev_stream *stream, const char *data, size_t len)
 {
     struct sev_buffer *buffer = sev_buffer_new(data, len);
-    STAILQ_INSERT_TAIL(&client->head, buffer, entries);
+    STAILQ_INSERT_TAIL(&stream->head, buffer, entries);
 
-    if (!client->writing) {
-        ev_io_start(EV_DEFAULT_ client->w_write);
-        client->writing = 1;
+    if (!stream->writing) {
+        ev_io_start(EV_DEFAULT_ stream->w_write);
+        stream->writing = 1;
     }
 }

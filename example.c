@@ -31,12 +31,13 @@
 
 #define PORT 5555
 
-void open_cb(struct sev_client *client)
+void open_cb(struct sev_stream *stream)
 {
-    printf("open %s:%d\n", client->ip, client->port);
+    printf("open %s:%d\n", stream->remote_address,
+        stream->remote_port);
 }
 
-void read_cb(struct sev_client *client, const char *data, size_t len)
+void read_cb(struct sev_stream *stream, const char *data, size_t len)
 {
     char buffer[2049];
     memcpy(buffer, data, len);
@@ -45,18 +46,18 @@ void read_cb(struct sev_client *client, const char *data, size_t len)
     if (buffer[len-1] == '\n')
         buffer[len-1] = '\0';
 
-    printf("read %s: %s\n", client->ip, buffer);
+    printf("read %s: %s\n", stream->remote_address, buffer);
 
-    sev_send(client, "hello\n", 6);
+    sev_send(stream, "hello\n", 6);
 
     if (data[0] == 'q') {
-        sev_close(client);
+        sev_close(stream);
     }
 }
 
-void close_cb(struct sev_client *client)
+void close_cb(struct sev_stream *stream)
 {
-    printf("close %s\n", client->ip);
+    printf("close %s\n", stream->remote_address);
 }
 
 int main(int argc, char *argv[])
@@ -65,8 +66,8 @@ int main(int argc, char *argv[])
 
     struct sev_server server;
 
-    if (sev_server_init(&server, PORT)) {
-        perror("sev_server_init");
+    if (sev_listen(&server, PORT)) {
+        perror("sev_listen");
         return -1;
     }
 
