@@ -23,62 +23,61 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SEV_H
-#define SEV_H
-
 #include <stdlib.h>
-#include <ev.h>
+#include <string.h>
 #include "sev_queue.h"
 
-struct sev_stream;
+static struct sev_buffer *sev_buffer_new(const char *data, size_t len)
+{
+    struct sev_buffer *buffer = malloc(sizeof(struct sev_buffer));
+    buffer->start = 0;
+    buffer->len = len;
+    buffer->data = malloc(len);
+    memcpy(buffer->data, data, len);
+    return buffer;
+}
 
-typedef void (sev_open_cb)(struct sev_stream *stream);
-typedef void (sev_read_cb)(struct sev_stream *stream, const char *data,
-    size_t len);
-typedef void (sev_close_cb)(struct sev_stream *stream);
+static void sev_buffer_free(struct sev_buffer *buffer)
+{
+    free(buffer->data);
+    free(buffer);
+}
 
-struct sev_server {
-    // socket descriptor
-    int sd;
+struct sev_queue *sev_queue_new(void)
+{
+    struct sev_queue *queue = malloc(sizeof(struct sev_queue));
+    STAILQ_INIT(&queue->head);
+    return queue;
+}
 
-    // libev watcher
-    struct ev_io *watcher;
+void sev_queue_free(struct sev_queue *queue)
+{
+    struct sev_buffer *buffer = STAILQ_FIRST(&queue->head);
 
-    // callbacks
-    sev_open_cb *open_cb;
-    sev_read_cb *read_cb;
-    sev_close_cb *close_cb;
+    while (buffer != NULL) {
+        struct sev_buffer *next = STAILQ_NEXT(buffer, entries);
+        sev_buffer_free(buffer);
+        buffer = next;
+    }
+    STAILQ_INIT(&queue->head);
 
-    // user data
-    void *data;
-};
+    free(queue);
+}
 
-struct sev_stream {
-    // socket descriptor
-    int sd;
+struct sev_buffer *sev_queue_head(struct sev_queue *queue)
+{
+    return STAILQ_FIRST(&queue->head);
+}
 
-    // libev watchers
-    struct ev_io *w_read;
-    struct ev_io *w_write;
-    int writing;
+void sev_queue_free_head(struct sev_queue *queue)
+{
+    struct sev_buffer *buffer = sev_queue_head(queue);
+    STAILQ_REMOVE_HEAD(&queue->head, entries);
+    sev_buffer_free(buffer);
+}
 
-    // stream info
-    char *remote_address;
-    int remote_port;
-
-    struct sev_server *server;
-
-    // user data
-    void *data;
-
-    // write queue
-    struct sev_queue *queue;
-};
-
-int sev_listen(struct sev_server *server, int port);
-
-void sev_send(struct sev_stream *stream, const char *data, size_t len);
-
-void sev_close(struct sev_stream *stream);
-
-#endif
+void sev_queue_push_back(struct sev_queue *queue, const char *data, size_t len)
+{
+    struct sev_buffer *buffer = sev_buffer_new(data, len);
+    STAILQ_INSERT_TAIL(&queue->head, buffer, entries);
+}

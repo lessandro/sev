@@ -37,36 +37,12 @@
 
 #define BUFSIZE 2048 // fits a 1500-byte MTU packet
 
-// sev_buffer
-
-static struct sev_buffer *sev_buffer_new(const char *data, size_t len)
-{
-    struct sev_buffer *buffer = malloc(sizeof(struct sev_buffer));
-    buffer->start = 0;
-    buffer->len = len;
-    buffer->data = malloc(len);
-    memcpy(buffer->data, data, len);
-    return buffer;
-}
-
-static void sev_buffer_free(struct sev_buffer *buffer)
-{
-    free(buffer->data);
-    free(buffer);
-}
-
 // sev_stream
 
 static void sev_stream_free(struct sev_stream *stream)
 {
     // free write queue
-    struct sev_buffer *buffer = STAILQ_FIRST(&stream->head);
-    while (buffer != NULL) {
-        struct sev_buffer *next = STAILQ_NEXT(buffer, entries);
-        sev_buffer_free(buffer);
-        buffer = next;
-    }
-    STAILQ_INIT(&stream->head);
+    sev_queue_free(stream->queue);
 
     // free everything
     free(stream->w_read);
@@ -79,7 +55,7 @@ static void sev_stream_free(struct sev_stream *stream)
 
 static void stream_write(struct sev_stream *stream)
 {
-    struct sev_buffer *buffer = STAILQ_FIRST(&stream->head);
+    struct sev_buffer *buffer = sev_queue_head(stream->queue);
 
     char *data = buffer->data + buffer->start;
     ssize_t len = buffer->len - buffer->start;
@@ -94,10 +70,9 @@ static void stream_write(struct sev_stream *stream)
     buffer->start += n;
 
     if (buffer->start == buffer->len) {
-        STAILQ_REMOVE_HEAD(&stream->head, entries);
-        sev_buffer_free(buffer);
+        sev_queue_free_head(stream->queue);
 
-        if (STAILQ_EMPTY(&stream->head)) {
+        if (sev_queue_head(stream->queue) == NULL) {
             // nothing left to write
             stream->writing = 0;
             ev_io_stop(EV_DEFAULT_ stream->w_write);
@@ -202,7 +177,7 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
     stream->writing = 0;
 
     // initialize write queue
-    STAILQ_INIT(&stream->head);
+    stream->queue = sev_queue_new();
 
     // call open callback
     if (server->open_cb)
@@ -254,8 +229,7 @@ void sev_close(struct sev_stream *stream)
 
 void sev_send(struct sev_stream *stream, const char *data, size_t len)
 {
-    struct sev_buffer *buffer = sev_buffer_new(data, len);
-    STAILQ_INSERT_TAIL(&stream->head, buffer, entries);
+    sev_queue_push_back(stream->queue, data, len);
 
     if (!stream->writing) {
         ev_io_start(EV_DEFAULT_ stream->w_write);

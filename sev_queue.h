@@ -23,62 +23,32 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SEV_H
-#define SEV_H
+#ifndef SEV_QUEUE_H
+#define SEV_QUEUE_H
 
 #include <stdlib.h>
-#include <ev.h>
-#include "sev_queue.h"
+#include <sys/queue.h>
 
-struct sev_stream;
+struct sev_buffer {
+    size_t len;
+    size_t start;
+    char *data;
 
-typedef void (sev_open_cb)(struct sev_stream *stream);
-typedef void (sev_read_cb)(struct sev_stream *stream, const char *data,
-    size_t len);
-typedef void (sev_close_cb)(struct sev_stream *stream);
-
-struct sev_server {
-    // socket descriptor
-    int sd;
-
-    // libev watcher
-    struct ev_io *watcher;
-
-    // callbacks
-    sev_open_cb *open_cb;
-    sev_read_cb *read_cb;
-    sev_close_cb *close_cb;
-
-    // user data
-    void *data;
+    STAILQ_ENTRY(sev_buffer) entries;
 };
 
-struct sev_stream {
-    // socket descriptor
-    int sd;
-
-    // libev watchers
-    struct ev_io *w_read;
-    struct ev_io *w_write;
-    int writing;
-
-    // stream info
-    char *remote_address;
-    int remote_port;
-
-    struct sev_server *server;
-
-    // user data
-    void *data;
-
-    // write queue
-    struct sev_queue *queue;
+struct sev_queue {
+    STAILQ_HEAD(sev_buffer_head, sev_buffer) head;
 };
 
-int sev_listen(struct sev_server *server, int port);
+struct sev_queue *sev_queue_new(void);
 
-void sev_send(struct sev_stream *stream, const char *data, size_t len);
+void sev_queue_free(struct sev_queue *queue);
 
-void sev_close(struct sev_stream *stream);
+struct sev_buffer *sev_queue_head(struct sev_queue *queue);
+
+void sev_queue_free_head(struct sev_queue *queue);
+
+void sev_queue_push_back(struct sev_queue *queue, const char *data, size_t len);
 
 #endif
