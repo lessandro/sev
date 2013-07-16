@@ -4,5 +4,5 @@ Goals:
 
 - super simple interface
 - buffer writes
-- C98
+- C99
 - BSD 2-clause license
