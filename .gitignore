@@ -1,4 +1,4 @@
 *.dSYM
 *.a
 *.o
-example
+example/example
