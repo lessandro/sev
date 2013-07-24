@@ -33,8 +33,7 @@
 struct sev_stream;
 
 typedef void (sev_open_cb)(struct sev_stream *stream);
-typedef void (sev_read_cb)(struct sev_stream *stream, const char *data,
-    size_t len);
+typedef void (sev_read_cb)(struct sev_stream *stream, char *data, size_t len);
 typedef void (sev_close_cb)(struct sev_stream *stream);
 
 struct sev_server {

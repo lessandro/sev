@@ -37,7 +37,7 @@ void open_cb(struct sev_stream *stream)
         stream->remote_port);
 }
 
-void read_cb(struct sev_stream *stream, const char *data, size_t len)
+void read_cb(struct sev_stream *stream, char *data, size_t len)
 {
     char buffer[2049];
     memcpy(buffer, data, len);
