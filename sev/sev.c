@@ -35,7 +35,8 @@
 #include <ev.h>
 #include "sev.h"
 
-#define BUFSIZE 2048 // fits a 1500-byte MTU packet
+#define READ_BUFFER_SIZE 2048 // fits a 1500-byte MTU packet
+#define WRITE_BUFFER_SIZE 4096
 
 // sev_stream
 
@@ -99,8 +100,8 @@ static void stream_close(struct sev_stream *stream)
 
 static void stream_read(struct sev_stream *stream)
 {
-    static char buffer[BUFSIZE];
-    ssize_t n = recv(stream->sd, buffer, BUFSIZE - 1, 0);
+    static char buffer[READ_BUFFER_SIZE];
+    ssize_t n = recv(stream->sd, buffer, READ_BUFFER_SIZE - 1, 0);
 
     if (n < 0) {
         // error
@@ -227,12 +228,17 @@ void sev_close(struct sev_stream *stream)
     stream_close(stream);
 }
 
-void sev_send(struct sev_stream *stream, const char *data, size_t len)
+int sev_send(struct sev_stream *stream, const char *data, size_t len)
 {
+    if (stream->queue->total_len >= WRITE_BUFFER_SIZE)
+        return -1;
+
     sev_queue_push_back(stream->queue, data, len);
 
     if (!stream->writing) {
         ev_io_start(EV_DEFAULT_ stream->w_write);
         stream->writing = 1;
     }
+
+    return 0;
 }

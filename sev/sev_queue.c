@@ -47,6 +47,7 @@ struct sev_queue *sev_queue_new(void)
 {
     struct sev_queue *queue = malloc(sizeof(struct sev_queue));
     STAILQ_INIT(&queue->head);
+    queue->total_len = 0;
     return queue;
 }
 
@@ -73,6 +74,7 @@ void sev_queue_free_head(struct sev_queue *queue)
 {
     struct sev_buffer *buffer = sev_queue_head(queue);
     STAILQ_REMOVE_HEAD(&queue->head, entries);
+    queue->total_len -= buffer->len;
     sev_buffer_free(buffer);
 }
 
@@ -80,4 +82,5 @@ void sev_queue_push_back(struct sev_queue *queue, const char *data, size_t len)
 {
     struct sev_buffer *buffer = sev_buffer_new(data, len);
     STAILQ_INSERT_TAIL(&queue->head, buffer, entries);
+    queue->total_len += buffer->len;
 }

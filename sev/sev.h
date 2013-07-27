@@ -76,7 +76,7 @@ struct sev_stream {
 
 int sev_listen(struct sev_server *server, int port);
 
-void sev_send(struct sev_stream *stream, const char *data, size_t len);
+int sev_send(struct sev_stream *stream, const char *data, size_t len);
 
 void sev_close(struct sev_stream *stream);
 

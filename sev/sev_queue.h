@@ -38,6 +38,7 @@ struct sev_buffer {
 };
 
 struct sev_queue {
+    size_t total_len;
     STAILQ_HEAD(sev_buffer_head, sev_buffer) head;
 };
 

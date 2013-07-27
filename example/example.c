@@ -48,7 +48,10 @@ void read_cb(struct sev_stream *stream, char *data, size_t len)
 
     printf("read %s: %s\n", stream->remote_address, buffer);
 
-    sev_send(stream, "hello\n", 6);
+    if (sev_send(stream, "hello\n", 6) == -1) {
+        sev_close(stream);
+        return;
+    }
 
     if (data[0] == 'q') {
         sev_close(stream);
