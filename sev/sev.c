@@ -209,6 +209,24 @@ int sev_send(struct sev_stream *stream, const char *data, size_t len)
     if (len == 0)
         return 0;
 
+    // try sending the data straight away
+    if (!stream->writing) {
+        int n = send(stream->sd, data, len, 0);
+
+        if (n == -1) {
+            perror("sev_send");
+        }
+        else if (n < len) {
+            // sent part of the data
+            data += n;
+            len -= n;
+        }
+        else {
+            // sent all the data, nothing else to do here
+            return 0;
+        }
+    }
+
     // buffer full
     if (stream->buffer_len + len > SEND_BUFFER_SIZE)
         return -1;
