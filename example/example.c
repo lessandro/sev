@@ -27,7 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ev.h>
-#include "../sev/sev.h"
+#include "../sev.h"
 
 #define PORT 5555
 

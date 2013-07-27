@@ -1,7 +1,14 @@
-all:
+all: examples static
+
+static:
+	$(CC) -std=c99 -Wall -c *.c
+	ar rcs sev.a *.o
+
+example:
 	$(MAKE) -C example
-	$(MAKE) -C sev
 
 clean:
+	rm -rf *.a *.o
 	$(MAKE) -C example clean
-	$(MAKE) -C sev clean
+
+.PHONY: all static example clean
