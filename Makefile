@@ -1,4 +1,4 @@
-all: examples static
+all: example static
 
 static:
 	$(CC) -std=c99 -Wall -c *.c
