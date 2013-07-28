@@ -25,8 +25,6 @@
 
 #include <signal.h>
 #include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -44,7 +42,6 @@
 static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
 {
     if (revents & EV_ERROR) {
-        perror("stream_cb");
         sev_close(watcher->data, strerror(errno));
         return;
     }
@@ -59,7 +56,6 @@ static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
 
     if (n < 0) {
         // error
-        perror("recv");
         sev_close(stream, strerror(errno));
         return;
     }
@@ -80,11 +76,9 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
     struct sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
 
-    int sd = accept(watcher->fd, (struct sockaddr*)&addr, &addr_len);
-    if (sd == -1) {
-        perror("accept");
+    int sd = accept(watcher->fd, (struct sockaddr *)&addr, &addr_len);
+    if (sd == -1)
         return;
-    }
 
     // set non-blocking
     int flags = fcntl(sd, F_GETFL, 0);
