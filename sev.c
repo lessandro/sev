@@ -23,6 +23,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <signal.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -117,6 +118,37 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
 
 // interface
 
+int sev_send(struct sev_stream *stream, const char *data, size_t len)
+{
+    while (len > 0) {
+        int n = send(stream->sd, data, len, 0);
+
+        if (n == -1) {
+            sev_close(stream, strerror(errno));
+            return -1;
+        }
+
+        // can send() return 0?
+        data += n;
+        len -= n;
+    }
+
+    return 0;
+}
+
+void sev_close(struct sev_stream *stream, const char *reason)
+{
+    if (stream->server->close_cb)
+        stream->server->close_cb(stream, reason);
+
+    // stop libev watcher
+    ev_io_stop(EV_DEFAULT_ &stream->watcher);
+
+    close(stream->sd);
+
+    free(stream);
+}
+
 int sev_listen(struct sev_server *server, int port)
 {
     // create server socket
@@ -151,36 +183,9 @@ int sev_listen(struct sev_server *server, int port)
     return 0;
 }
 
-void sev_close(struct sev_stream *stream, const char *reason)
+void sev_loop(void)
 {
-    if (stream->server->close_cb)
-        stream->server->close_cb(stream, reason);
+    signal(SIGPIPE, SIG_IGN);
 
-    if (close(stream->sd) == -1)
-        perror("close");
-
-    // stop libev watcher
-    ev_io_stop(EV_DEFAULT_ &stream->watcher);
-
-    memset(stream, -1, sizeof(struct sev_stream));
-    free(stream);
-}
-
-int sev_send(struct sev_stream *stream, const char *data, size_t len)
-{
-    while (len > 0) {
-        int n = send(stream->sd, data, len, 0);
-
-        if (n == -1) {
-            perror("sev_send");
-            sev_close(stream, strerror(errno));
-            return -1;
-        }
-
-        // can send() return 0?
-        data += n;
-        len -= n;
-    }
-
-    return 0;
+    ev_loop(EV_DEFAULT_ 0);
 }

@@ -69,10 +69,12 @@ struct sev_stream {
     void *data;
 };
 
-int sev_listen(struct sev_server *server, int port);
-
 int sev_send(struct sev_stream *stream, const char *data, size_t len);
 
 void sev_close(struct sev_stream *stream, const char *reason);
+
+int sev_listen(struct sev_server *server, int port);
+
+void sev_loop(void);
 
 #endif
