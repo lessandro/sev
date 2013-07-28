@@ -39,14 +39,11 @@ void open_cb(struct sev_stream *stream)
 
 void read_cb(struct sev_stream *stream, char *data, size_t len)
 {
-    char buffer[2049];
-    memcpy(buffer, data, len);
+    data[len] = '\0';
+    if (data[len-1] == '\n')
+        data[len-1] = '\0';
 
-    buffer[len] = '\0';
-    if (buffer[len-1] == '\n')
-        buffer[len-1] = '\0';
-
-    printf("read %s: %s\n", stream->remote_address, buffer);
+    printf("read %s: %s\n", stream->remote_address, data);
 
     if (sev_send(stream, "hello\n", 6) == -1)
         return;
