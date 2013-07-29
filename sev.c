@@ -33,28 +33,40 @@
 #include <ev.h>
 #include "sev.h"
 
-#define RECV_BUFFER_SIZE 2048 // fits a 1500-byte MTU packet
-
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 // callbacks
 
-static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
+static void stream_write(struct sev_stream *stream)
 {
-    if (revents & EV_ERROR) {
-        sev_close(watcher->data, strerror(errno));
+    int len = MIN(stream->buffer_len, SEND_BUFFER_SIZE - stream->buffer_start);
+
+    int n = send(stream->sd, stream->buffer + stream->buffer_start, len, 0);
+
+    if (n == -1) {
+        sev_close(stream, strerror(errno));
         return;
     }
 
-    if ((revents & EV_READ) == 0)
-        return;
+    stream->buffer_start = (stream->buffer_start + n) % SEND_BUFFER_SIZE;
+    stream->buffer_len -= n;
 
-    struct sev_stream *stream = watcher->data;
+    if (stream->buffer_len == 0) {
+        // reset circular buffer to the beginning
+        stream->buffer_start = 0;
+        stream->buffer_end = 0;
 
+        stream->writing = 0;
+        ev_io_stop(EV_DEFAULT_ &stream->w_write);
+    }
+}
+
+static void stream_read(struct sev_stream *stream)
+{
     static char buffer[RECV_BUFFER_SIZE];
     ssize_t n = recv(stream->sd, buffer, RECV_BUFFER_SIZE - 1, 0);
 
-    if (n < 0) {
+    if (n == -1) {
         // error
         sev_close(stream, strerror(errno));
         return;
@@ -68,6 +80,24 @@ static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
 
     if (stream->server->read_cb)
         stream->server->read_cb(stream, buffer, n);
+}
+
+static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
+{
+    if (revents & EV_ERROR) {
+        sev_close(watcher->data, strerror(errno));
+        return;
+    }
+
+    if (revents & EV_READ) {
+        stream_read(watcher->data);
+        return;
+    }
+
+    if (revents & EV_WRITE) {
+        stream_write(watcher->data);
+        return;
+    }
 }
 
 static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
@@ -100,10 +130,19 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
         INET_ADDRSTRLEN);
 
     // register with libev
-    ev_io_init(&stream->watcher, stream_cb, sd, EV_READ);
-    ev_io_start(EV_DEFAULT_ &stream->watcher);
+    ev_io_init(&stream->w_read, stream_cb, sd, EV_READ);
+    ev_io_start(EV_DEFAULT_ &stream->w_read);
 
-    stream->watcher.data = stream;
+    ev_io_init(&stream->w_write, stream_cb, sd, EV_WRITE);
+
+    stream->w_read.data = stream;
+    stream->w_write.data = stream;
+    stream->writing = 0;
+
+    // initialize write buffer
+    stream->buffer_start = 0;
+    stream->buffer_end = 0;
+    stream->buffer_len = 0;
 
     // call open callback
     if (server->open_cb)
@@ -114,17 +153,48 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
 
 int sev_send(struct sev_stream *stream, const char *data, size_t len)
 {
-    while (len > 0) {
+
+    // try sending the data straight away
+    if (!stream->writing) {
         int n = send(stream->sd, data, len, 0);
 
         if (n == -1) {
-            sev_close(stream, strerror(errno));
-            return -1;
+            if (errno != EAGAIN) {
+                sev_close(stream, strerror(errno));
+                return -1;
+            }
         }
+        else if (n < len) {
+            // sent part of the data
+            data += n;
+            len -= n;
+        }
+        else {
+            // sent all the data, nothing else to do here
+            return 0;
+        }
+    }
 
-        // can send() return 0?
-        data += n;
-        len -= n;
+    // buffer full
+    if (stream->buffer_len + len > SEND_BUFFER_SIZE) {
+        sev_close(stream, "Send buffer full");
+        return -1;        
+    }
+
+    // write the data to the circular buffer
+    size_t first_part = MIN(SEND_BUFFER_SIZE - stream->buffer_end, len);
+    size_t second_part = len - first_part;
+
+    memcpy(stream->buffer + stream->buffer_end, data, first_part);
+    memcpy(stream->buffer, data + first_part, second_part);
+
+    stream->buffer_end = (stream->buffer_end + len) % SEND_BUFFER_SIZE;
+    stream->buffer_len += len;
+
+    // tell libev we want to write
+    if (!stream->writing) {
+        ev_io_start(EV_DEFAULT_ &stream->w_write);
+        stream->writing = 1;
     }
 
     return 0;
@@ -135,8 +205,10 @@ void sev_close(struct sev_stream *stream, const char *reason)
     if (stream->server->close_cb)
         stream->server->close_cb(stream, reason);
 
-    // stop libev watcher
-    ev_io_stop(EV_DEFAULT_ &stream->watcher);
+    // stop libev watchers
+    ev_io_stop(EV_DEFAULT_ &stream->w_read);
+    if (stream->writing)
+        ev_io_stop(EV_DEFAULT_ &stream->w_write);
 
     close(stream->sd);
 

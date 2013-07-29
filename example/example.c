@@ -68,6 +68,8 @@ int main(int argc, char *argv[])
     server.read_cb = read_cb;
     server.close_cb = close_cb;
 
+    printf("listening on port %d\n", PORT);
+
     sev_loop();
 
     return 0;

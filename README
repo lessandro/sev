@@ -3,5 +3,6 @@ High level socket library on top of libev.
 Goals:
 
 - super simple interface
+- buffer writes
 - C99
 - BSD 2-clause license

@@ -30,6 +30,9 @@
 #include <netinet/in.h>
 #include <ev.h>
 
+#define RECV_BUFFER_SIZE 2048 // fits a 1500-byte MTU packet
+#define SEND_BUFFER_SIZE 4096
+
 struct sev_stream;
 
 typedef void (sev_open_cb)(struct sev_stream *stream);
@@ -56,8 +59,10 @@ struct sev_stream {
     // socket descriptor
     int sd;
 
-    // libev watcher
-    struct ev_io watcher;
+    // libev watchers
+    struct ev_io w_read;
+    struct ev_io w_write;
+    int writing;
 
     // stream info
     char remote_address[INET_ADDRSTRLEN];
@@ -67,6 +72,12 @@ struct sev_stream {
 
     // user data
     void *data;
+
+    // circular buffer
+    char buffer[SEND_BUFFER_SIZE];
+    size_t buffer_start;
+    size_t buffer_end;
+    size_t buffer_len;
 };
 
 int sev_send(struct sev_stream *stream, const char *data, size_t len);
