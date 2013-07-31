@@ -27,6 +27,7 @@
 #include <string.h>
 #include "../sev.h"
 
+#define ADDRESS "127.0.0.1"
 #define PORT 5555
 
 void open_cb(struct sev_stream *stream)
@@ -59,7 +60,7 @@ int main(int argc, char *argv[])
 {
     struct sev_server server;
 
-    if (sev_listen(&server, PORT)) {
+    if (sev_listen(&server, ADDRESS, PORT)) {
         perror("sev_listen");
         return -1;
     }
@@ -68,7 +69,7 @@ int main(int argc, char *argv[])
     server.read_cb = read_cb;
     server.close_cb = close_cb;
 
-    printf("listening on port %d\n", PORT);
+    printf("listening on %s:%d\n", ADDRESS, PORT);
 
     sev_loop();
 

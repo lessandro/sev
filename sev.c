@@ -215,7 +215,7 @@ void sev_close(struct sev_stream *stream, const char *reason)
     free(stream);
 }
 
-int sev_listen(struct sev_server *server, int port)
+int sev_listen(struct sev_server *server, const char *address, int port)
 {
     // create server socket
     int sd = socket(PF_INET, SOCK_STREAM, 0);
@@ -229,7 +229,9 @@ int sev_listen(struct sev_server *server, int port)
     struct sockaddr_in addr = {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (inet_pton(AF_INET, address, &addr.sin_addr) != 1)
+        return -1;
 
     // bind/listen
     if (bind(sd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
