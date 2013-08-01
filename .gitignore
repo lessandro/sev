@@ -1,4 +1,5 @@
 *.dSYM
 *.a
 *.o
+example/client
 example/server
