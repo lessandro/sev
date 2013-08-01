@@ -24,12 +24,14 @@
  */
 
 #include <signal.h>
+#include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <netdb.h>
 #include <ev.h>
 #include "sev.h"
 
@@ -78,8 +80,8 @@ static void stream_read(struct sev_stream *stream)
         return;
     }
 
-    if (stream->server->read_cb)
-        stream->server->read_cb(stream, buffer, n);
+    if (stream->read_cb)
+        stream->read_cb(stream, buffer, n);
 }
 
 static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
@@ -100,16 +102,8 @@ static void stream_cb(EV_P_ struct ev_io *watcher, int revents)
     }
 }
 
-static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
+static struct sev_stream *sev_stream_new(int sd, struct sockaddr_in *addr)
 {
-    // accept client socket
-    struct sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-
-    int sd = accept(watcher->fd, (struct sockaddr *)&addr, &addr_len);
-    if (sd == -1)
-        return;
-
     // set non-blocking
     int flags = fcntl(sd, F_GETFL, 0);
     flags |= O_NONBLOCK;
@@ -117,16 +111,14 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
 
     // disable nagle's algorithm
     int flag = 1;
-    setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
+    setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int));
 
     // initialize sev_stream structure
-    struct sev_server *server = watcher->data;
-    struct sev_stream *stream = malloc(sizeof(struct sev_stream));
+    struct sev_stream *stream = calloc(1, sizeof(struct sev_stream));
 
     stream->sd = sd;
-    stream->server = server;
-    stream->remote_port = addr.sin_port;
-    inet_ntop(AF_INET, &addr.sin_addr, stream->remote_address,
+    stream->remote_port = addr->sin_port;
+    inet_ntop(AF_INET, &addr->sin_addr, stream->remote_address,
         INET_ADDRSTRLEN);
 
     // register with libev
@@ -137,12 +129,28 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
 
     stream->w_read.data = stream;
     stream->w_write.data = stream;
-    stream->writing = 0;
 
-    // initialize write buffer
-    stream->buffer_start = 0;
-    stream->buffer_end = 0;
-    stream->buffer_len = 0;
+    return stream;
+}
+
+static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
+{
+    // accept client socket
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+
+    int sd = accept(watcher->fd, (struct sockaddr *)&addr, &addr_len);
+    if (sd == -1)
+        return;
+
+    struct sev_stream *stream = sev_stream_new(sd, &addr);
+
+    struct sev_server *server = watcher->data;
+    stream->server = server;
+
+    // initialize callbacks
+    stream->read_cb = server->read_cb;
+    stream->close_cb = server->close_cb;
 
     // call open callback
     if (server->open_cb)
@@ -153,7 +161,6 @@ static void accept_cb(EV_P_ struct ev_io *watcher, int revents)
 
 int sev_send(struct sev_stream *stream, const char *data, size_t len)
 {
-
     // try sending the data straight away
     if (!stream->writing) {
         int n = send(stream->sd, data, len, 0);
@@ -202,8 +209,8 @@ int sev_send(struct sev_stream *stream, const char *data, size_t len)
 
 void sev_close(struct sev_stream *stream, const char *reason)
 {
-    if (stream->server->close_cb)
-        stream->server->close_cb(stream, reason);
+    if (stream->close_cb)
+        stream->close_cb(stream, reason);
 
     // stop libev watchers
     ev_io_stop(EV_DEFAULT_ &stream->w_read);
@@ -249,6 +256,44 @@ int sev_listen(struct sev_server *server, const char *address, int port)
     ev_io_start(EV_DEFAULT_ &server->watcher);
 
     return 0;
+}
+
+struct sev_stream *sev_connect(const char *address, int port)
+{
+    int sd, rv;
+    struct addrinfo *servinfo, *p;
+
+    struct addrinfo hint = {
+        .ai_family = AF_INET,
+        .ai_socktype = SOCK_STREAM
+    };
+
+    char port_str[12];
+    sprintf(port_str, "%d", port);
+
+    if ((rv = getaddrinfo(address, port_str, &hint, &servinfo)) != 0)
+        return NULL;
+
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sd = socket(p->ai_family, p->ai_socktype,
+                p->ai_protocol)) == -1) {
+            continue;
+        }
+
+        if (connect(sd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sd);
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL)
+        return NULL;
+
+    freeaddrinfo(servinfo);
+
+    return sev_stream_new(sd, (struct sockaddr_in *)p->ai_addr);
 }
 
 void sev_loop(void)

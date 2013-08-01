@@ -64,6 +64,11 @@ struct sev_stream {
     struct ev_io w_write;
     int writing;
 
+    // callbacks
+    sev_open_cb *open_cb;
+    sev_read_cb *read_cb;
+    sev_close_cb *close_cb;
+
     // stream info
     char remote_address[INET_ADDRSTRLEN];
     int remote_port;
@@ -85,6 +90,8 @@ int sev_send(struct sev_stream *stream, const char *data, size_t len);
 void sev_close(struct sev_stream *stream, const char *reason);
 
 int sev_listen(struct sev_server *server, const char *address, int port);
+
+struct sev_stream *sev_connect(const char *address, int port);
 
 void sev_loop(void);
 
