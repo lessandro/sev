@@ -1,5 +1,5 @@
 all:
-	$(CC) -std=c99 -Wall -o example example.c ../*.c -lev
+	$(CC) -std=c99 -Wall -o server server.c ../*.c -lev
 
 clean:
-	rm -rf *.dSYM example
+	rm -rf *.dSYM client server
