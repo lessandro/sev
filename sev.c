@@ -124,8 +124,10 @@ static struct sev_stream *sev_stream_new(int sd, struct sockaddr_in *addr)
     // register with libev
     ev_io_init(&stream->w_read, stream_cb, sd, EV_READ);
     ev_io_start(EV_DEFAULT_ &stream->w_read);
+    stream->reading = 1;
 
     ev_io_init(&stream->w_write, stream_cb, sd, EV_WRITE);
+    stream->writing = 0;
 
     stream->w_read.data = stream;
     stream->w_write.data = stream;
@@ -213,7 +215,9 @@ void sev_close(struct sev_stream *stream, const char *reason)
         stream->close_cb(stream, reason);
 
     // stop libev watchers
-    ev_io_stop(EV_DEFAULT_ &stream->w_read);
+    if (stream->reading)
+        ev_io_stop(EV_DEFAULT_ &stream->w_read);
+
     if (stream->writing)
         ev_io_stop(EV_DEFAULT_ &stream->w_write);
 
@@ -301,4 +305,20 @@ void sev_loop(void)
     signal(SIGPIPE, SIG_IGN);
 
     ev_loop(EV_DEFAULT_ 0);
+}
+
+void sev_block_read(struct sev_stream *stream)
+{
+    if (stream->reading) {
+        stream->reading = 0;
+        ev_io_stop(EV_DEFAULT_ &stream->w_read);
+    }
+}
+
+void sev_allow_read(struct sev_stream *stream)
+{
+    if (!stream->reading) {
+        stream->reading = 1;
+        ev_io_start(EV_DEFAULT_ &stream->w_read);
+    }
 }

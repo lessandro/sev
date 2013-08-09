@@ -62,6 +62,7 @@ struct sev_stream {
     // libev watchers
     struct ev_io w_read;
     struct ev_io w_write;
+    int reading;
     int writing;
 
     // callbacks
@@ -94,5 +95,9 @@ int sev_listen(struct sev_server *server, const char *address, int port);
 struct sev_stream *sev_connect(const char *address, int port);
 
 void sev_loop(void);
+
+void sev_block_read(struct sev_stream *stream);
+
+void sev_allow_read(struct sev_stream *stream);
 
 #endif
