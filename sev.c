@@ -267,10 +267,9 @@ struct sev_stream *sev_connect(const char *address, int port)
     int sd, rv;
     struct addrinfo *servinfo, *p;
 
-    struct addrinfo hint = {
-        .ai_family = AF_INET,
-        .ai_socktype = SOCK_STREAM
-    };
+    struct addrinfo hint = {};
+    hint.ai_family = AF_INET;
+    hint.ai_socktype = SOCK_STREAM;
 
     char port_str[12];
     sprintf(port_str, "%d", port);

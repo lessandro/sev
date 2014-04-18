@@ -1,7 +1,7 @@
 all: example static
 
 static:
-	$(CC) -std=c99 -Wall -c *.c
+	$(CC) -std=gnu99 -Wall -c *.c
 	ar rcs sev.a *.o
 
 example:
